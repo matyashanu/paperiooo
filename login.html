@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Snatch — Login</title>
+  <style>
+    body{display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0b0b0b;color:#fff;font-family:system-ui,Arial}
+    .card{background:#111;padding:28px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.6);width:320px}
+    h1{margin:0 0 8px;font-size:20px}
+    label{display:block;margin:10px 0 6px;color:#bfbfbf;font-size:13px}
+    input[type="text"]{width:100%;padding:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:#0b0b0b;color:#fff}
+    button{margin-top:14px;width:100%;padding:10px;border-radius:6px;border:0;background:#2e8b57;color:#fff;font-weight:600;cursor:pointer}
+    .small{margin-top:10px;text-align:center;color:#9aa}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Snatch — Lobby</h1>
+    <div>Enter your player name to join the game.</div>
+    <label for="name">Player name</label>
+    <input id="name" type="text" placeholder="Your name" maxlength="24" />
+    <button id="start">Start Game</button>
+    <div class="small">This lobby will appear after each death.</div>
+  </div>
+
+  <script>
+    const input = document.getElementById('name');
+    const btn = document.getElementById('start');
+    // prefill from localStorage if exists
+    const saved = localStorage.getItem('snatch_player');
+    if(saved) input.value = saved;
+    function start(){
+      const v = (input.value || 'Player').trim();
+      localStorage.setItem('snatch_player', v);
+      // mark session as started so we don't redirect back to login
+      sessionStorage.setItem('snatch_session_started', '1');
+      window.location.href = 'index.html';
+    }
+    btn.addEventListener('click', start);
+    input.addEventListener('keypress', e=>{ if(e.key==='Enter') start(); });
+  </script>
+</body>
+</html>

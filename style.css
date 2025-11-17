@@ -1,0 +1,9 @@
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#101010;color:#fff}
+#game{display:block;width:100vw;height:100vh}
+#hud{position:fixed;left:12px;top:12px;z-index:10;display:flex;gap:12px;align-items:center}
+#score{background:rgba(0,0,0,0.5);padding:8px 12px;border-radius:6px}
+#instructions{background:rgba(0,0,0,0.35);padding:8px 12px;border-radius:6px;font-size:13px}
+#restart{padding:8px 12px;border-radius:6px;border:0;background:#2e8b57;color:#fff;cursor:pointer}
+#restart:hover{filter:brightness(1.05)}
