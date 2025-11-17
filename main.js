@@ -146,6 +146,72 @@ function segIntersects(a1, a2, b1, b2){
 // Game objects
 const playerColor = '#5fd068';
 let state;
+let playerId = null;
+let ws = null;
+let otherPlayers = new Map(); // id -> player object
+
+// Connect to WebSocket server
+function connectToServer() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}`;
+  
+  ws = new WebSocket(wsUrl);
+  
+  ws.onopen = () => {
+    console.log('Connected to server');
+  };
+  
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    
+    if (msg.type === 'init') {
+      playerId = msg.playerId;
+      console.log('Assigned player ID:', playerId);
+    } else if (msg.type === 'gameState') {
+      // Update other players
+      otherPlayers.clear();
+      for (const player of msg.players) {
+        if (player.id !== playerId) {
+          otherPlayers.set(player.id, player);
+        }
+      }
+    }
+  };
+  
+  ws.onerror = (err) => {
+    console.error('WebSocket error:', err);
+  };
+  
+  ws.onclose = () => {
+    console.log('Disconnected from server');
+    // Try to reconnect in 3 seconds
+    setTimeout(connectToServer, 3000);
+  };
+}
+
+function sendPlayerUpdate() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !playerId) return;
+  
+  ws.send(JSON.stringify({
+    type: 'playerUpdate',
+    x: state.player.x,
+    y: state.player.y,
+    vx: state.player.vx,
+    vy: state.player.vy,
+    trail: state.trail,
+    trailActive: state.trailActive,
+    territory: [], // could sync this too
+    score: state.score
+  }));
+}
+
+function sendPlayerDeath() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !playerId) return;
+  
+  ws.send(JSON.stringify({
+    type: 'playerDeath'
+  }));
+}
 
 function reset(){
   state = {
@@ -183,6 +249,8 @@ function updatePlayerNameHUD(){
 function handleDeath(){
   // save last score optionally
   try{ localStorage.setItem('snatch_last_score', String(Math.round(state.score))); }catch(e){}
+  // Notify server
+  sendPlayerDeath();
   // redirect to login/lobby page immediately
   window.location.href = 'login.html';
 }
@@ -362,6 +430,28 @@ function draw(){
   ctx.globalAlpha = 1;
   ctx.beginPath(); ctx.arc(state.player.x, state.player.y, state.player.radius, 0, Math.PI*2); ctx.fill();
 
+  // draw other players
+  otherPlayers.forEach(player => {
+    ctx.fillStyle = player.color || '#ccc';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius || 6, 0, Math.PI*2);
+    ctx.fill();
+    
+    // draw player trail
+    if (player.trail && player.trail.length > 0) {
+      ctx.strokeStyle = player.color || '#ccc';
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(player.trail[0].x, player.trail[0].y);
+      for (let i = 1; i < player.trail.length; i++) {
+        ctx.lineTo(player.trail[i].x, player.trail[i].y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  });
+
   ctx.restore();
 
   // draw minimap (screen-space overlay) - moved higher so percentage is visible
@@ -423,13 +513,22 @@ function draw(){
 }
 
 let last = performance.now();
+let lastUpdateTime = 0;
 function loop(t){
   const dt = Math.min(32, t-last);
   update(dt/16.67);
   draw();
+  
+  // Send player update to server every 16ms (60 FPS)
+  if (t - lastUpdateTime > 16) {
+    sendPlayerUpdate();
+    lastUpdateTime = t;
+  }
+  
   last = t;
   requestAnimationFrame(loop);
 }
 
 reset();
+connectToServer();
 requestAnimationFrame(loop);
