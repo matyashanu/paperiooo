@@ -128,6 +128,18 @@ function distToSegment(px,py,x1,y1,x2,y2){
   return Math.sqrt(dx*dx+dy*dy);
 }
 
+function distToTrail(px, py, trail) {
+  if (!trail || trail.length < 2) return Infinity;
+  let minDist = Infinity;
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i];
+    const b = trail[i + 1];
+    const dist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+    minDist = Math.min(minDist, dist);
+  }
+  return minDist;
+}
+
 // segment intersection helper
 function segIntersects(a1, a2, b1, b2){
   // based on orientation tests
@@ -149,6 +161,7 @@ let state;
 let playerId = null;
 let ws = null;
 let otherPlayers = new Map(); // id -> player object
+let sharedMap = null; // shared map object from server
 
 // Connect to WebSocket server
 function connectToServer() {
@@ -166,6 +179,9 @@ function connectToServer() {
     
     if (msg.type === 'init') {
       playerId = msg.playerId;
+      sharedMap = msg.map;
+      // Override local map with server map
+      map = {cx: sharedMap.cx, cy: sharedMap.cy, r: sharedMap.r};
       console.log('Assigned player ID:', playerId);
     } else if (msg.type === 'gameState') {
       // Update other players
@@ -210,6 +226,14 @@ function sendPlayerDeath() {
   
   ws.send(JSON.stringify({
     type: 'playerDeath'
+  }));
+}
+
+function sendTrailCollision() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !playerId) return;
+  
+  ws.send(JSON.stringify({
+    type: 'trailCollision'
   }));
 }
 
@@ -380,6 +404,7 @@ function update(dt){
         const a = state.trail[i];
         const c = state.trail[i + 1];
         if(segIntersects(lastA, lastB, a, c)){
+          sendTrailCollision();
           handleDeath();
           return;
         }
@@ -387,6 +412,21 @@ function update(dt){
     }
   }
 
+  // Check collision with other players' trails
+  otherPlayers.forEach(otherPlayer => {
+    if (!otherPlayer.alive) return;
+    
+    if (otherPlayer.trail && otherPlayer.trail.length > 0) {
+      // Check if player position is near other player's trail
+      const trailDist = distToTrail(state.player.x, state.player.y, otherPlayer.trail);
+      if (trailDist < state.player.radius + 2) {
+        // Collision with other player's trail - we die
+        sendTrailCollision();
+        handleDeath();
+        return;
+      }
+    }
+  });
 }
 
 function draw(){

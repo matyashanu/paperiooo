@@ -53,6 +53,29 @@ function createPlayer(id, name) {
   };
 }
 
+// Check if a point is near a trail segment
+function pointNearTrail(px, py, trail, radius = 6) {
+  if (!trail || trail.length < 2) return false;
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i];
+    const b = trail[i + 1];
+    const dist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+    if (dist < radius) return true;
+  }
+  return false;
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
+  const dot = A * C + B * D;
+  const len2 = C * C + D * D;
+  let t = len2 === 0 ? -1 : Math.max(0, Math.min(1, dot / len2));
+  const projx = x1 + t * C;
+  const projy = y1 + t * D;
+  const dx = px - projx, dy = py - projy;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 // Broadcast game state to all connected clients
 function broadcastGameState() {
   const state = {
@@ -119,8 +142,21 @@ wss.on('connection', (ws) => {
 
       if (msg.type === 'playerDeath' && players.has(playerId)) {
         const p = players.get(playerId);
-        p.alive = false;
-        console.log(`✗ Player died: ${p.name}`);
+        if (p.alive) {
+          p.alive = false;
+          console.log(`✗ Player died: ${p.name}`);
+          broadcastGameState();
+        }
+      }
+
+      if (msg.type === 'trailCollision' && players.has(playerId)) {
+        // Another player hit this player's trail, or this player hit their own trail
+        const p = players.get(playerId);
+        if (p.alive) {
+          p.alive = false;
+          console.log(`✗ Player killed by trail collision: ${p.name}`);
+          broadcastGameState();
+        }
       }
     } catch (e) {
       console.error('Error processing message:', e);
