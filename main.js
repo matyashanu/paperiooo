@@ -131,11 +131,16 @@ function distToSegment(px,py,x1,y1,x2,y2){
 function distToTrail(px, py, trail) {
   if (!trail || trail.length < 2) return Infinity;
   let minDist = Infinity;
-  for (let i = 0; i < trail.length - 1; i++) {
+  // Only check recent trail segments for efficiency (last 200 points)
+  const checkStart = Math.max(0, trail.length - 200);
+  for (let i = checkStart; i < trail.length - 1; i++) {
     const a = trail[i];
     const b = trail[i + 1];
     const dist = distToSegment(px, py, a.x, a.y, b.x, b.y);
-    minDist = Math.min(minDist, dist);
+    if (dist < minDist) {
+      minDist = dist;
+      if (minDist < 2) return minDist; // Early exit if very close
+    }
   }
   return minDist;
 }
@@ -208,15 +213,20 @@ function connectToServer() {
 function sendPlayerUpdate() {
   if (!ws || ws.readyState !== WebSocket.OPEN || !playerId) return;
   
+  // Only send last 50 trail points to reduce network traffic
+  const trailToSend = state.trail.length > 50 
+    ? state.trail.slice(-50)
+    : state.trail;
+  
   ws.send(JSON.stringify({
     type: 'playerUpdate',
     x: state.player.x,
     y: state.player.y,
     vx: state.player.vx,
     vy: state.player.vy,
-    trail: state.trail,
+    trail: trailToSend,
     trailActive: state.trailActive,
-    territory: [], // could sync this too
+    territory: [],
     score: state.score
   }));
 }
@@ -344,8 +354,11 @@ function update(dt){
     // outside territory: record trail
     if(!state.trailActive){ state.trailActive = true; state.trail = [] }
     state.trail.push({x:p.x,y:p.y});
-    // Cap trail length to prevent memory growth
-    if(state.trail.length > MAX_TRAIL_LENGTH) state.trail.shift();
+    // Cap trail length more aggressively to prevent memory growth
+    if(state.trail.length > 1500) {
+      // Keep last 1200 points
+      state.trail = state.trail.slice(-1200);
+    }
   } else {
     if(state.trailActive && state.trail.length > 2){
       // Player re-entered territory. Compute captured polygon using Paper.io logic.
@@ -417,13 +430,30 @@ function update(dt){
     if (!otherPlayer.alive) return;
     
     if (otherPlayer.trail && otherPlayer.trail.length > 0) {
-      // Check if player position is near other player's trail
-      const trailDist = distToTrail(state.player.x, state.player.y, otherPlayer.trail);
-      if (trailDist < state.player.radius + 2) {
-        // Collision with other player's trail - we die
-        sendTrailCollision();
-        handleDeath();
-        return;
+      // Quick bounding box check first
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      const trail = otherPlayer.trail;
+      // Only check recent trail for bounding box
+      const checkStart = Math.max(0, trail.length - 100);
+      for (let i = checkStart; i < trail.length; i++) {
+        minX = Math.min(minX, trail[i].x);
+        maxX = Math.max(maxX, trail[i].x);
+        minY = Math.min(minY, trail[i].y);
+        maxY = Math.max(maxY, trail[i].y);
+      }
+      
+      const radius = state.player.radius + 4;
+      // Bounding box collision check
+      if (state.player.x + radius >= minX && state.player.x - radius <= maxX &&
+          state.player.y + radius >= minY && state.player.y - radius <= maxY) {
+        // Detailed check only if bounding box intersects
+        const trailDist = distToTrail(state.player.x, state.player.y, otherPlayer.trail);
+        if (trailDist < radius) {
+          // Collision with other player's trail - we die
+          sendTrailCollision();
+          handleDeath();
+          return;
+        }
       }
     }
   });
@@ -559,8 +589,8 @@ function loop(t){
   update(dt/16.67);
   draw();
   
-  // Send player update to server every 16ms (60 FPS)
-  if (t - lastUpdateTime > 16) {
+  // Send player update to server every 32ms (~30 FPS) instead of every frame to reduce network load
+  if (t - lastUpdateTime > 32) {
     sendPlayerUpdate();
     lastUpdateTime = t;
   }
